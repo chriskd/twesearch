@@ -1,5 +1,7 @@
 from searchtweets import ResultStream, gen_request_parameters, load_credentials, collect_results
 import tweepy
+from decimal import Decimal
+import json
 import logging
 import sys
 
@@ -14,7 +16,7 @@ TWEET_FIELDS = "author_id,text,context_annotations,conversation_id,created_at,en
 
 class Twesearch:
 
-    def __init__(self,log=False, log_level="info"):
+    def __init__(self,log=False, log_level="info", defloat=False):
         if log:
             fmt="%(levelname)s:%(module)s:%(funcName)s():%(lineno)i: %(message)s"
             if log_level == "debug":
@@ -29,7 +31,7 @@ class Twesearch:
                                        yaml_key="search_tweets_v2",
                                        env_overwrite=False)
         self.tweepy = tweepy.API(tweepy.AppAuthHandler(bearer_token=self.search_args['bearer_token']), wait_on_rate_limit=True, wait_on_rate_limit_notify=True)
-
+        self.defloat = defloat
 
     def _ghetto_split(self, list_, chunk_size=100):
         """
@@ -60,8 +62,14 @@ class Twesearch:
 
         tweets = tweets + expanded_tweets
         users = users + expanded_users
+        if self.defloat:
+            tweets = self._defloat(tweets)
+            users = self._defloat(users)
         logging.info(f"Final stats: {len(tweets)} total tweets, {len(users)} total users")
         return {'tweets': tweets, 'users': users}
+    
+    def _defloat(self, results):
+        return json.loads(json.dumps(results), parse_float=Decimal)
 
     def return_search_args(self):
         return self.search_args
