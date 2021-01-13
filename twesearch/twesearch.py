@@ -4,15 +4,15 @@ import logging
 import sys
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
-            referenced_tweets.id.author_id,referenced_tweets.id" 
+            referenced_tweets.id.author_id,referenced_tweets.id"
 USER_FIELDS = "created_at,description,entities,id,location,name,pinned_tweet_id,\
-            profile_image_url,protected,public_metrics,url,username,verified,withheld" 
+            profile_image_url,protected,public_metrics,url,username,verified,withheld"
 PLACE_FIELDS = "contained_within,country,country_code,full_name,geo,id,name,place_type"
 TWEET_FIELDS = "author_id,text,context_annotations,conversation_id,created_at,entities,geo,\
             in_reply_to_user_id,lang,public_metrics,possibly_sensitive,referenced_tweets,source,withheld"
 
 
-class TwesearchV2:
+class Twesearch:
 
     def __init__(self,log=False, log_level="info"):
         if log:
@@ -30,7 +30,7 @@ class TwesearchV2:
                                        env_overwrite=False)
         self.tweepy = tweepy.API(tweepy.AppAuthHandler(bearer_token=self.search_args['bearer_token']), wait_on_rate_limit=True, wait_on_rate_limit_notify=True)
 
-    
+
     def _ghetto_split(self, list_, chunk_size=100):
         """
         Utility function to split a list into a list of lists of size chunk_size
@@ -41,7 +41,7 @@ class TwesearchV2:
             split_lists.append(list_[i:i+chunk_size])
         logging.debug(f"List has been split into {len(split_lists)} lists. Total num of elements in split lists is {sum([len(i) for i in split_lists])}")
         return split_lists
-    
+
     def _extract_expansions_and_tweets(self, results):
         logging.info("Separating tweets, users and places")
 
@@ -62,13 +62,13 @@ class TwesearchV2:
         users = users + expanded_users
         logging.info(f"Final stats: {len(tweets)} total tweets, {len(users)} total users")
         return {'tweets': tweets, 'users': users}
-    
+
     def return_search_args(self):
         return self.search_args
-    
+
     def return_tweepy_api(self):
         return self.tweepy
-    
+
     def search_tweets(self, search_query, user_fields=USER_FIELDS, expansions=EXPANSIONS,
                     place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100, max_results=5000):
         query = gen_request_parameters(
@@ -115,10 +115,10 @@ class TwesearchV2:
         missing_tweet_ids = [i for i in tweet_ids if i not in result_tweet_ids]
 
         logging.info(f"Returned {len(results)} tweets out of {len(tweet_ids)} requested tweets")
-        logging.debug(f"{len(missing_tweet_ids)} Missing tweets: \n {missing_tweet_ids}") 
+        logging.debug(f"{len(missing_tweet_ids)} Missing tweets: \n {missing_tweet_ids}")
         results = self._extract_expansions_and_tweets(results)
         return results
-    
+
     def get_followers(self, user_id, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
                     tweet_fields=TWEET_FIELDS, results_per_call=1000, max_results=5000):
         query = gen_request_parameters(
@@ -148,7 +148,7 @@ class TwesearchV2:
         logging.info(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
-    
+
     def get_users(self, identifiers, by_usernames=False, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
                     tweet_fields=TWEET_FIELDS, results_per_call=100):
         if by_usernames:
@@ -183,7 +183,7 @@ class TwesearchV2:
         logging.info(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
-    
+
     def get_users_v1(self, identifiers, by_usernames=False, tweet_mode='extended'):
         logging.info(f"Fetching {len(identifiers)} users by {'username' if by_usernames else 'user ids'}")
         if len(identifiers) > 100:
@@ -197,7 +197,7 @@ class TwesearchV2:
                 else:
                     results.extend(self.tweepy.lookup_users(user_ids = split, tweet_mode=tweet_mode))
         else:
-            if by_usernames: 
+            if by_usernames:
                 results = self.tweepy.lookup_users(screen_names = identifiers, tweet_mode=tweet_mode)
             else:
                 results = self.tweepy.lookup_users(user_ids = identifiers, tweet_mode=tweet_mode)
