@@ -161,10 +161,12 @@ class Twesearch:
                     tweet_fields=TWEET_FIELDS, results_per_call=100):
         if by_usernames:
             api = "users_by_name"
+            log_api_str = "user names"
         else:
             api = "users"
+            log_api_str = "user ids"
 
-        logging.info(f"Fetching {len(identifiers)} users by {api}")
+        logging.info(f"Fetching {len(identifiers)} users by {log_api_str}")
         if len(identifiers) > 100:
             logging.info(f"Over 100 users requested, chunking requests per 100")
             split_identifiers = self._ghetto_split(identifiers)
@@ -217,14 +219,15 @@ class Twesearch:
         users_v2 = self.get_users(identifiers, by_usernames=by_usernames)
         users_v1 = self.get_users_v1(identifiers, by_usernames=by_usernames)
         if len(users_v2) != len(users_v1):
-            logging.warning(f"Result number mismatch - users V2 returned {len(users_v2)} results and users V1 returned {len(users_v1)}")
+            logging.warning(f"Result number mismatch - users V2 returned {len(users_v2['users'])} results and users V1 returned {len(users_v1)}")
         full_user_data = []
         for user_v1 in users_v1:
             user_v2 = [u for u in users_v2['users'] if u['id'] == user_v1.id_str][0]
             user_v2['public_metrics']['likes_count'] = user_v1.favourites_count
             full_user_data.append(user_v2)
-        logging.info(f"Returned {len(full_user_data)} user IDs out of {len(identifiers)} request IDs")
-        return full_user_data
+        results = {'users': full_user_data, 'tweets': users_v2['tweets']}
+        logging.info(f"Returned {len(results)} user IDs out of {len(identifiers)} request IDs")
+        return results
 
     def get_follower_ids_v1(self, screen_name=None, user_id=None, max_results=None):
         logging.info(f"Getting v1 follower ids for {screen_name if screen_name else user_id}")
