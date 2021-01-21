@@ -218,7 +218,7 @@ class Twesearch:
         logging.info(f"Fetching {len(identifiers)} users with liked count")
         users_v2 = self.get_users(identifiers, by_usernames=by_usernames)
         users_v1 = self.get_users_v1(identifiers, by_usernames=by_usernames)
-        if len(users_v2) != len(users_v1):
+        if len(users_v2['users']) != len(users_v1):
             logging.warning(f"Result number mismatch - users V2 returned {len(users_v2['users'])} results and users V1 returned {len(users_v1)}")
         full_user_data = []
         for user_v1 in users_v1:
@@ -226,7 +226,7 @@ class Twesearch:
             user_v2['public_metrics']['likes_count'] = user_v1.favourites_count
             full_user_data.append(user_v2)
         results = {'users': full_user_data, 'tweets': users_v2['tweets']}
-        logging.info(f"Returned {len(results)} user IDs out of {len(identifiers)} request IDs")
+        logging.info(f"Returned {len(results['users'])} user IDs out of {len(identifiers)} request IDs")
         return results
 
     def get_follower_ids_v1(self, screen_name=None, user_id=None, max_results=None):
