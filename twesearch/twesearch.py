@@ -89,7 +89,7 @@ class Twesearch:
             results_per_call=results_per_call)
         logging.info(f"Performing search for {search_query}, returning {results_per_call} results per call. Max of {max_results} results")
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
-        logging.info(f"Returned {len(results)} results")
+        logging.debug(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
@@ -122,7 +122,7 @@ class Twesearch:
         result_tweet_ids = [i["id"] for i in results if "text" in i.keys()]
         missing_tweet_ids = [i for i in tweet_ids if i not in result_tweet_ids]
 
-        logging.info(f"Returned {len(results)} tweets out of {len(tweet_ids)} requested tweets")
+        logging.debug(f"Returned {len(results)} tweets out of {len(tweet_ids)} requested tweets")
         logging.debug(f"{len(missing_tweet_ids)} Missing tweets: \n {missing_tweet_ids}")
         results = self._extract_expansions_and_tweets(results)
         return results
@@ -138,7 +138,7 @@ class Twesearch:
             results_per_call=results_per_call)
         logging.info(f"Performing follower_lookup for {user_id}, returning {results_per_call} results per call. Max of {max_results} results")
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
-        logging.info(f"Returned {len(results)} results")
+        logging.debug(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
@@ -153,7 +153,7 @@ class Twesearch:
             results_per_call=results_per_call)
         logging.info(f"Performing following lookup for {user_id}, returning {results_per_call} results per call. Max of {max_results} results")
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
-        logging.info(f"Returned {len(results)} results")
+        logging.debug(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
@@ -185,10 +185,9 @@ class Twesearch:
                 expansions=expansions,
                 tweet_fields=tweet_fields,
                 user_fields=user_fields)
-            print(len(identifiers))
             results = collect_results(query, max_results=len(identifiers) + 100, result_stream_args=self.search_args)
 
-        logging.info(f"Returned {len(results)} results")
+        logging.debug(f"Returned {len(results)} total results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
@@ -212,6 +211,20 @@ class Twesearch:
 
         logging.info(f"Returned {len(results)} users out of {len(identifiers)} requested users")
         return results
+    
+    def get_users_with_likes(self, identifiers, by_usernames=False):
+        logging.info(f"Fetching {len(identifiers)} users with liked count")
+        users_v2 = self.get_users(identifiers, by_usernames=by_usernames)
+        users_v1 = self.get_users_v1(identifiers, by_usernames=by_usernames)
+        if len(users_v2) != len(users_v1):
+            logging.warning(f"Result number mismatch - users V2 returned {len(users_v2)} results and users V1 returned {len(users_v1)}")
+        full_user_data = []
+        for user_v1 in users_v1:
+            user_v2 = [u for u in users_v2['users'] if u['id'] == user_v1.id_str][0]
+            user_v2['public_metrics']['likes_count'] = user_v1.favourites_count
+            full_user_data.append(user_v2)
+        logging.info(f"Returned {len(full_user_data)} user IDs out of {len(identifiers)} request IDs")
+        return full_user_data
 
     def get_follower_ids_v1(self, screen_name=None, user_id=None, max_results=None):
         logging.info(f"Getting v1 follower ids for {screen_name if screen_name else user_id}")
