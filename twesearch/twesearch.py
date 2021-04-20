@@ -4,6 +4,7 @@ from decimal import Decimal
 import json
 import logging
 import sys
+from pprint import pprint
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
             referenced_tweets.id.author_id,referenced_tweets.id"
@@ -46,22 +47,23 @@ class Twesearch:
 
     def _extract_expansions_and_tweets(self, results):
         logging.info("Separating tweets, users and places")
+        data = results[0]['data']
+        includes = results[0]['includes']
 
-        tweets = [i for i in results if 'text' in i.keys()]
-        logging.info(f"Fetched {len(tweets)} tweets from outer list")
-        expanded_tweets = [t for i in [e['tweets'] for e in results if 'tweets' in e.keys()] for t in i if 'text' in t.keys() ]
-        logging.info(f"Fetched {len(expanded_tweets)} from Tweet expansions object")
+        tweets = [i for i in data if 'text' in i.keys()]
+        logging.info(f"Fetched {len(tweets)} tweets from data object")
+        if 'tweets' in includes.keys():
+            included_tweets = includes['tweets']
+            logging.info(f"Fetched {len(included_tweets)} from Tweet expansions object")
+            tweets = tweets + included_tweets
 
-        users = [i for i in results if 'username' in i.keys()]
-        logging.info(f"Fetched {len(users)} users from outer list")
-        expanded_users = [t for i in [e['users'] for e in results if 'users' in e.keys()] for t in i]
-        logging.info(f"Fetched {len(expanded_users)} from Users expansion object")
+        users = [i for i in data if 'username' in i.keys()]
+        logging.info(f"Fetched {len(users)} users from data object")
+        if 'users' in includes.keys():
+            included_users = includes['users']
+            logging.info(f"Fetched {len(included_users)} from Users expansion object")
+            users = users + included_users
 
-        extracted_resuts = {"og_tweet_count": len(tweets), "og_users_count": len(users),
-                            "expanded_tweet_count": len(expanded_tweets), "expanded_users_count": len(expanded_users)}
-
-        tweets = tweets + expanded_tweets
-        users = users + expanded_users
         if self.defloat:
             tweets = self._defloat(tweets)
             users = self._defloat(users)
@@ -88,8 +90,9 @@ class Twesearch:
             user_fields=user_fields,
             results_per_call=results_per_call)
         logging.info(f"Performing search for {search_query}, returning {results_per_call} results per call. Max of {max_results} results")
+        self.search_args['output_format'] = 'r'
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
-        logging.debug(f"Returned {len(results)} results")
+        logging.debug(f"Returned {len(results[0]['data'])} results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
