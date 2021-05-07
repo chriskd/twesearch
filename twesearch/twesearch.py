@@ -87,14 +87,14 @@ class Twesearch:
     
     def username_to_id(self, username):
         logging.info(f"Translating {username} to user ID")
-        user_id = self.get_users([username], by_usernames=True, user_fields='', expansions='', tweet_fields='')['users']['id']
+        user_id = self.get_users([username], by_usernames=True, user_fields='', expansions='', tweet_fields='')['users'][0]['id']
         logging.info(f"Username {username} has ID {user_id}")
         
         return user_id
     
     def id_to_username(self, user_id):
         logging.info(f"Translating {user_id} to username")
-        username = self.get_users([user_id], by_usernames=false, user_fields='', expansions='', tweet_fields='')['users']['username']
+        username = self.get_users([user_id], by_usernames=false, user_fields='', expansions='', tweet_fields='')['users'][0]['username']
         logging.info(f"ID {user_id} has ID {username}")
         
         return username
