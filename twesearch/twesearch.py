@@ -116,7 +116,7 @@ class Twesearch:
         return results
 
     def get_users_timeline_tweets(self, user_id, user_fields=USER_FIELDS, expansions=EXPANSIONS,
-                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100):
+                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100, max_results=10000):
         query = gen_request_parameters(
             api="timeline",
             id=user_id,
