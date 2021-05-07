@@ -43,8 +43,14 @@ class Twesearch:
             split_lists.append(list_[i:i+chunk_size])
         logging.debug(f"List has been split into {len(split_lists)} lists. Total num of elements in split lists is {sum([len(i) for i in split_lists])}")
         return split_lists
+    
+    def _dedupe_tweets(self, tweets):
+        logging.info(f"Starting with {len(tweets)} total tweets")
+        unique_tweets = list({v['id']:v for v in tweets}.values())
+        logging.info(f"Found {len(unique_ids)} unique tweets")
+        return unique_tweets           
 
-    def _extract_expansions_and_tweets(self, results):
+    def _extract_expansions_and_tweets(self, results, dedupe=True):
         logging.info("Separating tweets, users and places")
 
         tweets = [i for i in results if 'text' in i.keys()]
@@ -61,6 +67,8 @@ class Twesearch:
                             "expanded_tweet_count": len(expanded_tweets), "expanded_users_count": len(expanded_users)}
 
         tweets = tweets + expanded_tweets
+        if dedupe:
+            tweets = self._dedupe_tweets(tweets + expanded_tweets)
         users = users + expanded_users
         if self.defloat:
             tweets = self._defloat(tweets)
