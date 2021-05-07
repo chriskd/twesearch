@@ -47,7 +47,7 @@ class Twesearch:
     def _dedupe_tweets(self, tweets):
         logging.info(f"Starting with {len(tweets)} total tweets")
         unique_tweets = list({v['id']:v for v in tweets}.values())
-        logging.info(f"Found {len(unique_ids)} unique tweets")
+        logging.info(f"Found {len(unique_tweets)} unique tweets")
         return unique_tweets           
 
     def _extract_expansions_and_tweets(self, results, dedupe=True):
