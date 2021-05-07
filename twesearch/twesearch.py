@@ -68,7 +68,7 @@ class Twesearch:
 
         tweets = tweets + expanded_tweets
         if dedupe:
-            tweets = self._dedupe_tweets(tweets + expanded_tweets)
+            tweets = self._dedupe_tweets(tweets)
         users = users + expanded_users
         if self.defloat:
             tweets = self._defloat(tweets)
