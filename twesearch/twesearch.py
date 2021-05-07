@@ -84,6 +84,20 @@ class Twesearch:
 
     def return_tweepy_api(self):
         return self.tweepy
+    
+    def username_to_id(self, username):
+        logging.info(f"Translating {username} to user ID")
+        user_id = self.get_users([username], by_usernames=True, user_fields='', expansions='', tweet_fields='')['users']['id']
+        logging.info(f"Username {username} has ID {user_id}")
+        
+        return user_id
+    
+    def id_to_username(self, user_id):
+        logging.info(f"Translating {user_id} to username")
+        username = self.get_users([user_id], by_usernames=false, user_fields='', expansions='', tweet_fields='')['users']['username']
+        logging.info(f"ID {user_id} has ID {username}")
+        
+        return username
 
     def search_tweets(self, search_query, user_fields=USER_FIELDS, expansions=EXPANSIONS,
                     place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100, max_results=5000):
@@ -101,7 +115,23 @@ class Twesearch:
         results = self._extract_expansions_and_tweets(results)
         return results
 
-    def get_tweets(self, tweet_ids, user_fields=USER_FIELDS, expansions=EXPANSIONS,
+    def get_users_timeline_tweets(self, user_id, user_fields=USER_FIELDS, expansions=EXPANSIONS,
+                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100):
+        query = gen_request_parameters(
+            api="timeline",
+            id=user_id,
+            expansions=expansions,
+            place_fields=place_fields,
+            tweet_fields=tweet_fields,
+            user_fields=user_fields,
+            results_per_call=results_per_call)
+        logging.info(f"Fetching timeline for user ID {user_id} returning {results_per_call} results per call")
+        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
+        logging.debug(f"Returned {len(results)} results")
+        results = self._extract_expansions_and_tweets(results)
+        return results
+
+    def get_tweets_by_ids(self, tweet_ids, user_fields=USER_FIELDS, expansions=EXPANSIONS,
                     place_fields=PLACE_FIELDS,tweet_fields=TWEET_FIELDS):
 
         logging.info(f"Fetching {len(tweet_ids)} tweets")
