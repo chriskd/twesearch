@@ -4,6 +4,7 @@ from decimal import Decimal
 import json
 import logging
 import sys
+import datetime
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
             referenced_tweets.id.author_id,referenced_tweets.id"
@@ -65,11 +66,18 @@ class Twesearch:
 
         extracted_resuts = {"og_tweet_count": len(tweets), "og_users_count": len(users),
                             "expanded_tweet_count": len(expanded_tweets), "expanded_users_count": len(expanded_users)}
-
+                        
+        timestamp = datetime.datetime.now().isoformat()
         tweets = tweets + expanded_tweets
+        logging.info(f"adding timestamp {timestamp} to tweets")
+        for tweet in tweets:
+            tweet.update({'fetched_timestamp': timestamp})
         if dedupe:
             tweets = self._dedupe_tweets(tweets)
         users = users + expanded_users
+        logging.info(f"adding timestamp {timestamp} to users")
+        for user in users:
+            user.update({'fetched_timestamp': timestamp})
         if self.defloat:
             tweets = self._defloat(tweets)
             users = self._defloat(users)
