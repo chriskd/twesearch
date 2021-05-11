@@ -108,7 +108,7 @@ class Twesearch:
         return username
 
     def search_tweets(self, search_query, user_fields=USER_FIELDS, expansions=EXPANSIONS,
-                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, other_query_args = None, results_per_call=100, max_results=5000):
+                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, other_query_args = {}, results_per_call=100, max_results=5000):
         query = gen_request_parameters(
             api="search",
             query=search_query,
