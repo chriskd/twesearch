@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 import datetime
+from pprint import pprint
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
             referenced_tweets.id.author_id,referenced_tweets.id"
@@ -24,6 +25,8 @@ class Twesearch:
                 logging.basicConfig(stream=sys.stdout,level=logging.DEBUG,format=fmt)
             elif log_level == "info":
                 logging.basicConfig(stream=sys.stdout,level=logging.INFO)
+            elif log_level == "warn":
+                logging.basicConfig(stream=sys.stdout,level=logging.WARN)
             logger = logging.getLogger()
             formatter = logging.Formatter(fmt)
             logger.handlers[0].setFormatter(formatter)
@@ -53,6 +56,7 @@ class Twesearch:
 
     def _extract_expansions_and_tweets(self, results, dedupe=True):
         logging.info("Separating tweets, users and places")
+        counts = {'total_tweets_count': 0, 'dedupe_tweets_count': 0}
 
         tweets = [i for i in results if 'text' in i.keys()]
         logging.info(f"Fetched {len(tweets)} tweets from outer list")
@@ -64,25 +68,25 @@ class Twesearch:
         expanded_users = [t for i in [e['users'] for e in results if 'users' in e.keys()] for t in i]
         logging.info(f"Fetched {len(expanded_users)} from Users expansion object")
 
-        extracted_resuts = {"og_tweet_count": len(tweets), "og_users_count": len(users),
-                            "expanded_tweet_count": len(expanded_tweets), "expanded_users_count": len(expanded_users)}
-                        
         timestamp = datetime.datetime.now().isoformat()
         tweets = tweets + expanded_tweets
-        counts = {'total_tweets_count': len(tweets)}
-        logging.info(f"adding timestamp {timestamp} to tweets")
-        for tweet in tweets:
-            tweet.update({'fetched_timestamp': timestamp})
-        if dedupe:
-            tweets = self._dedupe_tweets(tweets)
-            counts.update({'dedupe_tweets_count': len(tweets)})
+        if len(tweets) > 0:
+            counts['total_tweets_count'] = sum([x['result_count'] for x in results if 'result_count' in x.keys()])
+            logging.info(f"adding timestamp {timestamp} to tweets")
+            for tweet in tweets:
+                tweet.update({'fetched_timestamp': timestamp})
+            if dedupe:
+                tweets = self._dedupe_tweets(tweets)
+                counts['dedupe_tweets_count'] = len(tweets)
+
         users = users + expanded_users
-        logging.info(f"adding timestamp {timestamp} to users")
-        for user in users:
-            user.update({'fetched_timestamp': timestamp})
-        if self.defloat:
-            tweets = self._defloat(tweets)
-            users = self._defloat(users)
+        if len(users) > 0:
+            logging.info(f"adding timestamp {timestamp} to users")
+            for user in users:
+                user.update({'fetched_timestamp': timestamp})
+            if self.defloat:
+                tweets = self._defloat(tweets)
+                users = self._defloat(users)
         logging.info(f"Final stats: {len(tweets)} total tweets, {len(users)} total users")
         return {'tweets': tweets, 'users': users, 'counts': counts}
     
