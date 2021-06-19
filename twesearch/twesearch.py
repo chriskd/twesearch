@@ -75,7 +75,7 @@ class Twesearch:
             tweet.update({'fetched_timestamp': timestamp})
         if dedupe:
             tweets = self._dedupe_tweets(tweets)
-            counts.update{'dedupe_tweets_count': len(tweets)}
+            counts.update({'dedupe_tweets_count': len(tweets)})
         users = users + expanded_users
         logging.info(f"adding timestamp {timestamp} to users")
         for user in users:
