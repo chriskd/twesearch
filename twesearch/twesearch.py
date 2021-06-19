@@ -4,7 +4,7 @@ from decimal import Decimal
 import json
 import logging
 import sys
-from pprint import pprint
+import datetime
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
             referenced_tweets.id.author_id,referenced_tweets.id"
@@ -44,31 +44,47 @@ class Twesearch:
             split_lists.append(list_[i:i+chunk_size])
         logging.debug(f"List has been split into {len(split_lists)} lists. Total num of elements in split lists is {sum([len(i) for i in split_lists])}")
         return split_lists
+    
+    def _dedupe_tweets(self, tweets):
+        logging.info(f"Starting with {len(tweets)} total tweets")
+        unique_tweets = list({v['id']:v for v in tweets}.values())
+        logging.info(f"Found {len(unique_tweets)} unique tweets")
+        return unique_tweets           
 
-    def _extract_expansions_and_tweets(self, results):
+    def _extract_expansions_and_tweets(self, results, dedupe=True):
         logging.info("Separating tweets, users and places")
-        data = results[0]['data']
-        includes = results[0]['includes']
 
-        tweets = [i for i in data if 'text' in i.keys()]
-        logging.info(f"Fetched {len(tweets)} tweets from data object")
-        if 'tweets' in includes.keys():
-            included_tweets = includes['tweets']
-            logging.info(f"Fetched {len(included_tweets)} from Tweet expansions object")
-            tweets = tweets + included_tweets
+        tweets = [i for i in results if 'text' in i.keys()]
+        logging.info(f"Fetched {len(tweets)} tweets from outer list")
+        expanded_tweets = [t for i in [e['tweets'] for e in results if 'tweets' in e.keys()] for t in i if 'text' in t.keys() ]
+        logging.info(f"Fetched {len(expanded_tweets)} from Tweet expansions object")
 
-        users = [i for i in data if 'username' in i.keys()]
-        logging.info(f"Fetched {len(users)} users from data object")
-        if 'users' in includes.keys():
-            included_users = includes['users']
-            logging.info(f"Fetched {len(included_users)} from Users expansion object")
-            users = users + included_users
+        users = [i for i in results if 'username' in i.keys()]
+        logging.info(f"Fetched {len(users)} users from outer list")
+        expanded_users = [t for i in [e['users'] for e in results if 'users' in e.keys()] for t in i]
+        logging.info(f"Fetched {len(expanded_users)} from Users expansion object")
 
+        extracted_resuts = {"og_tweet_count": len(tweets), "og_users_count": len(users),
+                            "expanded_tweet_count": len(expanded_tweets), "expanded_users_count": len(expanded_users)}
+                        
+        timestamp = datetime.datetime.now().isoformat()
+        tweets = tweets + expanded_tweets
+        counts = {'total_tweets_count': len(tweets)}
+        logging.info(f"adding timestamp {timestamp} to tweets")
+        for tweet in tweets:
+            tweet.update({'fetched_timestamp': timestamp})
+        if dedupe:
+            tweets = self._dedupe_tweets(tweets)
+            counts.update{'dedupe_tweets_count': len(tweets)}
+        users = users + expanded_users
+        logging.info(f"adding timestamp {timestamp} to users")
+        for user in users:
+            user.update({'fetched_timestamp': timestamp})
         if self.defloat:
             tweets = self._defloat(tweets)
             users = self._defloat(users)
         logging.info(f"Final stats: {len(tweets)} total tweets, {len(users)} total users")
-        return {'tweets': tweets, 'users': users}
+        return {'tweets': tweets, 'users': users, 'counts': counts}
     
     def _defloat(self, results):
         return json.loads(json.dumps(results), parse_float=Decimal)
@@ -78,9 +94,23 @@ class Twesearch:
 
     def return_tweepy_api(self):
         return self.tweepy
+    
+    def username_to_id(self, username):
+        logging.info(f"Translating {username} to user ID")
+        user_id = self.get_users([username], by_usernames=True, user_fields='', expansions='', tweet_fields='')['users'][0]['id']
+        logging.info(f"Username {username} has ID {user_id}")
+        
+        return user_id
+    
+    def id_to_username(self, user_id):
+        logging.info(f"Translating {user_id} to username")
+        username = self.get_users([user_id], by_usernames=False, user_fields='', expansions='', tweet_fields='')['users'][0]['username']
+        logging.info(f"ID {user_id} has ID {username}")
+        
+        return username
 
     def search_tweets(self, search_query, user_fields=USER_FIELDS, expansions=EXPANSIONS,
-                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100, max_results=5000):
+                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, other_query_args = {}, results_per_call=100, max_results=5000):
         query = gen_request_parameters(
             api="search",
             query=search_query,
@@ -88,15 +118,31 @@ class Twesearch:
             place_fields=place_fields,
             tweet_fields=tweet_fields,
             user_fields=user_fields,
-            results_per_call=results_per_call)
+            results_per_call=results_per_call,
+            **other_query_args)
         logging.info(f"Performing search for {search_query}, returning {results_per_call} results per call. Max of {max_results} results")
-        self.search_args['output_format'] = 'r'
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
-        logging.debug(f"Returned {len(results[0]['data'])} results")
+        logging.debug(f"Returned {len(results)} results")
         results = self._extract_expansions_and_tweets(results)
         return results
 
-    def get_tweets(self, tweet_ids, user_fields=USER_FIELDS, expansions=EXPANSIONS,
+    def get_users_timeline_tweets(self, user_id, user_fields=USER_FIELDS, expansions=EXPANSIONS,
+                    place_fields=PLACE_FIELDS, tweet_fields=TWEET_FIELDS, results_per_call=100, max_results=10000):
+        query = gen_request_parameters(
+            api="timeline",
+            id=user_id,
+            expansions=expansions,
+            place_fields=place_fields,
+            tweet_fields=tweet_fields,
+            user_fields=user_fields,
+            results_per_call=results_per_call)
+        logging.info(f"Fetching timeline for user ID {user_id} returning {results_per_call} results per call")
+        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
+        logging.debug(f"Returned {len(results)} results")
+        results = self._extract_expansions_and_tweets(results)
+        return results
+
+    def get_tweets_by_ids(self, tweet_ids, user_fields=USER_FIELDS, expansions=EXPANSIONS,
                     place_fields=PLACE_FIELDS,tweet_fields=TWEET_FIELDS):
 
         logging.info(f"Fetching {len(tweet_ids)} tweets")
