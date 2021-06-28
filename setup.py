@@ -8,6 +8,9 @@ setuptools.setup(
     url="https://github.com/chriskd/twesearch",
     packages=setuptools.find_packages(),
     python_requires='>=3.6',
-    install_requires=["searchtweets-v2", "tweepy"],
-    scripts=['bin/crawler.py']
+    install_requires=["searchtweets-v2", "tweepy", "Click"],
+    scripts=[
+            'bin/crawler.py',
+            'bin/follow_utils.py'
+            ]
 )

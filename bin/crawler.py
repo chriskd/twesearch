@@ -6,6 +6,7 @@ from random import randrange,choice
 import yaml
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta, date
+import requests
 
 from twesearch.lib import neo4j_importer
 from twesearch.lib.util import format_tweets_for_neo4j, add_campaign
@@ -78,8 +79,21 @@ while True:
         query_args = {'since_id': since_id}
     else:
         query_args = {}
-        
-    results = tv2.search_tweets(query["query"], max_results = adaptive_max_results, other_query_args = query_args) 
+    try:  
+        results = tv2.search_tweets(query["query"], max_results = adaptive_max_results, other_query_args = query_args) 
+    except requests.exceptions.HTTPError as e:
+        resp = e.response
+        if resp.status_code == 400:
+            resp = json.loads(resp.text)
+            if 'since_id' in resp['errors'][0]['parameters'].keys():
+                print(f'Received invalid since_id error for {query["query"]}. Trying without since_id set')
+                results = tv2.search_tweets(query["query"], max_results = adaptive_max_results)
+                if not results['counts']['total_tweets_count']:
+                    print(f'Query {query["query"]} has 0 results within the last 7 days. Removing')
+                    queries = [q for q in queries if q['query'] != query['query']]
+                    with open('queries.yaml', 'w') as queries_file:
+                        yaml.dump(queries, queries_file, sort_keys=True)
+                    continue
     
     tweets_count = results['counts']['total_tweets_count']
     tweets = results['tweets']
@@ -108,10 +122,18 @@ while True:
     else:
         continue
 
+    print(f'before query update: {query}')
+
     print(f"Setting since_id to {max_tweet_id} for query {query['query']}")
     query.update({'since_id': max_tweet_id})
 
     print(f"Sleeping for {TIMEOUT_MINUTES} mins and writing updated since_ids to json")
+
+    for q in queries:
+        if q['query'] == query['query']:
+            q.update(query)
+            print(f'after query update: {q}')
+
 
     with open('queries.yaml', 'w') as queries_file:
         yaml.dump(queries, queries_file, sort_keys=True)
