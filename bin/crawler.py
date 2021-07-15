@@ -7,6 +7,7 @@ import yaml
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta, date
 import requests
+import os
 
 from twesearch.lib import neo4j_importer
 from twesearch.lib.util import format_tweets_for_neo4j, add_campaign
@@ -15,15 +16,22 @@ from twesearch import Twesearch
 
 CAMPAIGN = "electionfraud-06-2021"
 logging.disable(logging.DEBUG)
-neo4j_importer = neo4j_importer.Neo4jImporter(neo4j_uri='bolt://10.124.0.3:7687', db_name='twitter', 
-                                                auth={'user': 'neo4j', 'password': '***REMOVED***'},log=True)
-couchbase_importer = couchbase_importer.CouchbaseImporter(cb_uri='couchbase://10.124.0.3', auth={'user': 'admin', 
-                                                                                            'password': '***REMOVED***'})
+neo4j_importer = neo4j_importer.Neo4jImporter(
+                                            neo4j_uri='bolt://10.124.0.3:7687',
+                                            db_name='twitter', 
+                                            auth={'user': 'neo4j', 
+                                                  'password': '***REMOVED***'},
+                                            log=True)
+couchbase_importer = couchbase_importer.CouchbaseImporter(
+                                                        cb_uri='couchbase://10.124.0.3', 
+                                                        auth={'user': 'admin', 
+                                                              'password': '***REMOVED***'})
 tv2 = Twesearch(log=True, log_level='warn')
 
 with open (r'config.yaml') as f:
     GLOBAL_CONFIG = yaml.load(f, Loader=yaml.FullLoader)
     TIMEOUT_MINUTES = GLOBAL_CONFIG['timeout_minutes']
+    TIMEOUT_SECONDS = GLOBAL_CONFIG['timeout_seconds']
     MAX_RESULTS = GLOBAL_CONFIG['max_results']
 
 with open('queries.yaml') as f:
@@ -34,6 +42,11 @@ print(f'Loaded {len(queries)} queries')
 start_day_of_month = 5
 
 while True:
+
+    with open('crawler.lock', 'w') as lock_file:
+        lock_file.write('')
+
+    query = choice([q for q in queries if q['active']])
 
     with open('quota.json') as quota_file:
         quota = json.load(quota_file)
@@ -54,14 +67,26 @@ while True:
 
     quota_remaining_timedelta = quota_end_date - datetime.now()
     quota_remaining_seconds = quota_remaining_timedelta.total_seconds()
-    quota_remaining_iterations = int(quota_remaining_seconds / (60 * TIMEOUT_MINUTES))
+    quota_remaining_iterations = int(quota_remaining_seconds / ((60 * TIMEOUT_MINUTES) + TIMEOUT_SECONDS))
     
-    adaptive_max_results = int((quota_max - quota_used) / quota_remaining_iterations)
+    if query['quota_override']: 
+        max_results = query['quota_override']    
+    else:
+        max_results = int((quota_max - quota_used) / quota_remaining_iterations)
 
-    query = choice(queries)
+    if max_results < 100:
+        results_per_call = max_results
+    elif max_results < 10:
+        results_per_call = 10
+        max_results = 10
+    else:
+        results_per_call = 100
 
     print(f'''
+    quota_override: {'TRUE' if query['quota_override'] else 'false'}
+
     query: {query['query']}
+
     quota_used: {quota_used}
     quota remaining: {quota_max - quota_used}
     current quota start: {quota_start_date}
@@ -69,7 +94,7 @@ while True:
     quota remaining timedelta: {quota_remaining_timedelta}
     quota remaining seconds: {quota_remaining_seconds}
     quota remaining iterations: {quota_remaining_iterations}
-    adaptive max results: {adaptive_max_results}
+    max_results: {max_results}
     ''')
 
     since_id = query['since_id']
@@ -80,14 +105,17 @@ while True:
     else:
         query_args = {}
     try:  
-        results = tv2.search_tweets(query["query"], max_results = adaptive_max_results, other_query_args = query_args) 
+        results = tv2.search_tweets(query["query"], 
+                                    max_results=max_results, 
+                                    results_per_call=results_per_call,
+                                    other_query_args = query_args) 
     except requests.exceptions.HTTPError as e:
         resp = e.response
         if resp.status_code == 400:
             resp = json.loads(resp.text)
             if 'since_id' in resp['errors'][0]['parameters'].keys():
                 print(f'Received invalid since_id error for {query["query"]}. Trying without since_id set')
-                results = tv2.search_tweets(query["query"], max_results = adaptive_max_results)
+                results = tv2.search_tweets(query["query"], max_results = max_results)
                 if not results['counts']['total_tweets_count']:
                     print(f'Query {query["query"]} has 0 results within the last 7 days. Removing')
                     queries = [q for q in queries if q['query'] != query['query']]
@@ -120,6 +148,7 @@ while True:
     if tweets:
         max_tweet_id = str(max([int(t['id']) for t in tweets]))
     else:
+        countdown(mins=TIMEOUT_MINUTES,secs=TIMEOUT_SECONDS)    
         continue
 
     print(f'before query update: {query}')
@@ -127,7 +156,7 @@ while True:
     print(f"Setting since_id to {max_tweet_id} for query {query['query']}")
     query.update({'since_id': max_tweet_id})
 
-    print(f"Sleeping for {TIMEOUT_MINUTES} mins and writing updated since_ids to json")
+    print(f"Sleeping for {TIMEOUT_MINUTES}m{TIMEOUT_SECONDS}s and writing updated since_ids to json")
 
     for q in queries:
         if q['query'] == query['query']:
@@ -141,4 +170,5 @@ while True:
     quota.update({'quota_used': quota_used})
     with open('quota.json', 'w') as quota_file:
         quota_file.write(json.dumps(quota))
-    countdown(mins=TIMEOUT_MINUTES,secs=00)    
+    os.remove("crawler.lock")
+    countdown(mins=TIMEOUT_MINUTES,secs=TIMEOUT_SECONDS)    
