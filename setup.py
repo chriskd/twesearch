@@ -11,6 +11,8 @@ setuptools.setup(
     install_requires=["searchtweets-v2", "tweepy", "Click"],
     scripts=[
             'bin/crawler.py',
-            'bin/follow_utils.py'
+            'bin/follower_utils.py',
+            'bin/get_timeline.py',
+            'bin/add_query.py'
             ]
 )

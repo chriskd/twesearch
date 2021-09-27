@@ -97,18 +97,28 @@ FOREACH (rt IN [rt IN refs WHERE rt.type = 'retweeted'] |
   MERGE (tweet)-[:RETWEETED]->(rt_tweet)
 )
 //Create URL nodes and Tweet-HAS_LINK->Link relationships
-WITH e.urls as urls
+WITH e.urls as urls,tweet
 UNWIND urls as url
-WITH toLower(url.expanded_url) as expanded_url
-WITH apoc.text.replace(expanded_url, '/$', '') as normalized_url, expanded_url
-WITH apoc.text.replace(normalized_url, '^https?://', '') as normalized_url, expanded_url
-WITH apoc.text.replace(apoc.text.replace(normalized_url, '(&?)(utm_.*?(?=&|$))', ''), '(\?$|(?<=\?)&)', '') as normalized_url, expanded_url
-WITH collect({expanded_url: expanded_url, normalized_url: normalized_url}) as urls
+WITH toLower(url.expanded_url) as expanded_url,tweet
+WITH apoc.text.replace(expanded_url, '^https?://', '') as normalized_url, expanded_url,tweet
+WITH apoc.text.replace(apoc.text.replace(normalized_url, '(&?)(utm_.*?(?=&|$))', ''), '(\?$|(?<=\?)&)', '') as normalized_url, expanded_url,tweet
+WITH apoc.text.replace(normalized_url, '/$', '') as normalized_url, expanded_url,tweet
+CALL apoc.when(
+    normalized_url =~ '^(www\.)?thegatewaypundit.com.*',
+    "RETURN apoc.text.replace($url, '/\?.*$', '') as url", 
+    'RETURN $url as url',
+    {url: normalized_url}
+) yield value
+WITH collect({expanded_url: expanded_url, normalized_url: value['url']}) as urls,tweet
 FOREACH (u IN urls |
   MERGE (url:URL {url:u['normalized_url']})
+  MERGE (tweet)-[:HAS_LINK]->(url)
   SET url.original_url = u['expanded_url']
   SET url.domain = apoc.data.domain(u['expanded_url'])
-  MERGE (tweet)-[:HAS_LINK]->(url)
+  SET (
+    CASE 
+    WHEN url.first_seen IS NULL
+    THEN url END).first_seen = datetime() 
 )
 '''
 
@@ -132,7 +142,7 @@ SET user.name = u.name,
     user.listed_count = u.public_metrics.listed_count,
     user.profile_image_url = u.profile_image_url,
     user.description = u.description,
-    user.created_at = u.created_at,
+    user.created_at = datetime(u.created_at),
     user.url = u.url,
     user.camp_id = u.camp_id
 MERGE (user)-[:POSTED]->(tweet)

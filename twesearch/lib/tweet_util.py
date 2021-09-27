@@ -2,6 +2,7 @@ import logging
 import datetime
 import json
 from decimal import Decimal
+from searchtweets import gen_request_parameters
 
 
 def defloat(results):
@@ -20,6 +21,26 @@ def dedupe_tweets(tweets):
     logging.info(f"Found {len(unique_tweets)} unique tweets")
     return unique_tweets     
 
+def gen_request(**query_args):
+    expansions = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
+            referenced_tweets.id.author_id,referenced_tweets.id"
+    user_fields = "created_at,description,entities,id,location,name,pinned_tweet_id,\
+                profile_image_url,protected,public_metrics,url,username,verified,withheld"
+    place_fields = "contained_within,country,country_code,full_name,geo,id,name,place_type"
+    tweet_fields = "author_id,text,context_annotations,conversation_id,created_at,entities,geo,\
+            in_reply_to_user_id,lang,public_metrics,possibly_sensitive,referenced_tweets,source,withheld"
+    print(query_args)
+    qa = {
+        'expansions': expansions,
+        'place_fields': place_fields,
+        'tweet_fields': tweet_fields,
+        'user_fields': user_fields,
+        'results_per_call': 100
+    }  
+    qa.update(query_args)
+    query = gen_request_parameters(**qa)
+    return query
+        
 def extract_expansions_and_tweets(results, dedupe=True):
     logging.info("Separating tweets, users and places")
     counts = {'total_tweets_count': 0, 'dedupe_tweets_count': 0}

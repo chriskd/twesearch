@@ -1,10 +1,10 @@
-from searchtweets import ResultStream, gen_request_parameters, load_credentials, collect_results
+from searchtweets import gen_request_parameters, load_credentials, collect_results
 import tweepy
 import logging
 from pprint import pprint
 
 from twesearch.lib.util import ghetto_split, create_stdout_logger
-from twesearch.lib.tweet_util import extract_expansions_and_tweets 
+from twesearch.lib.tweet_util import extract_expansions_and_tweets, gen_request
 
 EXPANSIONS = "entities.mentions.username,in_reply_to_user_id,author_id,geo.place_id,\
             referenced_tweets.id.author_id,referenced_tweets.id"
@@ -16,13 +16,17 @@ TWEET_FIELDS = "author_id,text,context_annotations,conversation_id,created_at,en
 
 class Twesearch:
 
-    def __init__(self,log=False, log_level="info"):
+    def __init__(self,log=False, log_level="info", output_format='m'):
         if log:
             self.logger = create_stdout_logger(log_level)
+
+        self.output_format = output_format
 
         self.search_args = load_credentials("~/.twitter_keys.yaml",
                                        yaml_key="search_tweets_v2",
                                        env_overwrite=False)
+        self.search_args['output_format'] = self.output_format
+
         self.tweepy = tweepy.API(tweepy.AppAuthHandler(bearer_token=self.search_args['bearer_token']), 
                                 wait_on_rate_limit=True, wait_on_rate_limit_notify=True)
 
@@ -34,7 +38,9 @@ class Twesearch:
     
     def username_to_id(self, username):
         logging.info(f"Translating {username} to user ID")
+        self.search_args['output_format'] = 'm'
         user = self.get_users([username], by_usernames=True, user_fields='', expansions='', tweet_fields='')['users']
+        self.search_args['output_format'] = self.output_format
         if user:
             user_id = user[0]['id']
             logging.info(f"Username {username} has ID {user_id}")
@@ -66,7 +72,8 @@ class Twesearch:
         logging.info(f"Performing search for {search_query}, returning {results_per_call} results per call. Max of {max_results} results")
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
         logging.debug(f"Returned {len(results)} results")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
         return results
 
     def get_users_timeline_tweets(self, user_id, user_fields=USER_FIELDS, expansions=EXPANSIONS,
@@ -82,45 +89,55 @@ class Twesearch:
         logging.info(f"Fetching timeline for user ID {user_id} returning {results_per_call} results per call")
         results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
         logging.debug(f"Returned {len(results)} results")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+                results = extract_expansions_and_tweets(results)
         return results
 
     def get_tweets_by_ids(self, tweet_ids, user_fields=USER_FIELDS, expansions=EXPANSIONS,
                     place_fields=PLACE_FIELDS,tweet_fields=TWEET_FIELDS):
 
         logging.info(f"Fetching {len(tweet_ids)} tweets")
-        if len(tweet_ids) > 100:
-            logging.info(f"Over 100 tweets requested, chunking requests per 100")
-            split_tweet_ids = ghetto_split(tweet_ids)
-            results = []
-            for split in split_tweet_ids:
-                logging.info(f"Requesting {len(split)} tweets of {len(tweet_ids)} tweets. {len(results)} total tweets fetched so far.")
-                query = gen_request_parameters(
-                    api="tweets",
-                    ids=split,
-                    expansions=expansions,
-                    place_fields=place_fields,
-                    tweet_fields=tweet_fields,
-                    user_fields=user_fields)
-                results.extend(collect_results(query, max_results=len(tweet_ids) + 100, result_stream_args=self.search_args))
-        else:
+        split_tweet_ids = ghetto_split(tweet_ids)
+        results = []
+        for split in split_tweet_ids:
+            logging.info(f"Requesting {len(split)} tweets of {len(tweet_ids)} tweets. {len(results)} total tweets fetched so far.")
             query = gen_request_parameters(
                 api="tweets",
-                ids=tweet_ids,
+                ids=split,
                 expansions=expansions,
+                place_fields=place_fields,
                 tweet_fields=tweet_fields,
                 user_fields=user_fields)
-            results = collect_results(query, max_results=len(tweet_ids) + 100, result_stream_args=self.search_args)
+            results.extend(collect_results(query, max_results=len(tweet_ids) + 100, result_stream_args=self.search_args))
+
+        results = collect_results(query, max_results=len(tweet_ids) + 100, result_stream_args=self.search_args)
         result_tweet_ids = [i["id"] for i in results if "text" in i.keys()]
         missing_tweet_ids = [i for i in tweet_ids if i not in result_tweet_ids]
 
         logging.debug(f"Returned {len(results)} tweets out of {len(tweet_ids)} requested tweets")
         logging.debug(f"{len(missing_tweet_ids)} Missing tweets: \n {missing_tweet_ids}")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
+        return results
+
+    def get_retweeted_by(self, tweet_id, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
+                tweet_fields=TWEET_FIELDS):
+
+        logging.info(f'Fetching rewteets for Tweet ID {tweet_id}')
+        query = gen_request_parameters(
+            api='retweeted_by',
+            id=tweet_id,
+            expansions=expansions,
+            tweet_fields=tweet_fields,
+            user_fields=user_fields)
+        results = collect_results(query, result_stream_args=self.search_args)
+
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
         return results
 
     def get_followers(self, user_id, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
-                    tweet_fields=TWEET_FIELDS, results_per_call=1000, max_results=5000):
+                    tweet_fields=TWEET_FIELDS, sleep=0, results_per_call=1000, max_results=5000):
         query = gen_request_parameters(
             api="followers",
             id=user_id,
@@ -129,13 +146,14 @@ class Twesearch:
             user_fields=user_fields,
             results_per_call=results_per_call)
         logging.info(f"Performing follower_lookup for {user_id}, returning {results_per_call} results per call. Max of {max_results} results")
-        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
+        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args, sleep=sleep)
         logging.debug(f"Returned {len(results)} results")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
         return results
 
     def get_following(self, user_id, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
-                    tweet_fields=TWEET_FIELDS, results_per_call=1000, max_results=5000):
+                    tweet_fields=TWEET_FIELDS, sleep=0, results_per_call=1000, max_results=5000):
         query = gen_request_parameters(
             api="following",
             id=user_id,
@@ -144,11 +162,12 @@ class Twesearch:
             user_fields=user_fields,
             results_per_call=results_per_call)
         logging.info(f"Performing following lookup for {user_id}, returning {results_per_call} results per call. Max of {max_results} results")
-        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args)
+        results = collect_results(query, max_results=max_results, result_stream_args=self.search_args, sleep=sleep)
         logging.debug(f"Returned {len(results)} results")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
         return results
-
+    
     def get_users(self, identifiers, by_usernames=False, user_fields=USER_FIELDS, expansions="pinned_tweet_id",
                     tweet_fields=TWEET_FIELDS, results_per_call=100):
         if by_usernames:
@@ -159,49 +178,33 @@ class Twesearch:
             log_api_str = "user ids"
 
         logging.info(f"Fetching {len(identifiers)} users by {log_api_str}")
-        if len(identifiers) > 100:
-            logging.info(f"Over 100 users requested, chunking requests per 100")
-            split_identifiers = ghetto_split(identifiers)
-            results = []
-            for split in split_identifiers:
-                logging.info(f"Requesting {len(split)} users of {len(identifiers)} users. {len(results)} total users fetched so far.")
-                query = gen_request_parameters(
-                    api=api,
-                    ids=split,
-                    expansions=expansions,
-                    tweet_fields=tweet_fields,
-                    user_fields=user_fields)
-                results.extend(collect_results(query, max_results=len(identifiers) + 100, result_stream_args=self.search_args))
-        else:
+        split_identifiers = ghetto_split(identifiers)
+        results = []
+        for split in split_identifiers:
+            logging.info(f"Requesting {len(split)} users of {len(identifiers)} users. {len(results)} total users fetched so far.")
             query = gen_request_parameters(
                 api=api,
-                ids=identifiers,
+                ids=split,
                 expansions=expansions,
                 tweet_fields=tweet_fields,
                 user_fields=user_fields)
-            results = collect_results(query, max_results=len(identifiers) + 100, result_stream_args=self.search_args)
+            results.extend(collect_results(query, max_results=len(identifiers) + 100, result_stream_args=self.search_args))
 
         logging.debug(f"Returned {len(results)} total results")
-        results = extract_expansions_and_tweets(results)
+        if self.search_args['output_format'] == 'm':
+            results = extract_expansions_and_tweets(results)
         return results
 
     def get_users_v1(self, identifiers, by_usernames=False, tweet_mode='extended'):
         logging.info(f"Fetching {len(identifiers)} users by {'username' if by_usernames else 'user ids'}")
-        if len(identifiers) > 100:
-            logging.info(f"Over 100 users requested, chunking requests per 100")
-            split_identifiers = ghetto_split(identifiers)
-            results = []
-            for split in split_identifiers:
-                logging.info(f"Requesting {len(split)} users of {len(identifiers)} users. {len(results)} total users fetched so far.")
-                if by_usernames:
-                    results.extend(self.tweepy.lookup_users(screen_names = split, tweet_mode=tweet_mode))
-                else:
-                    results.extend(self.tweepy.lookup_users(user_ids = split, tweet_mode=tweet_mode))
-        else:
+        split_identifiers = ghetto_split(identifiers)
+        results = []
+        for split in split_identifiers:
+            logging.info(f"Requesting {len(split)} users of {len(identifiers)} users. {len(results)} total users fetched so far.")
             if by_usernames:
-                results = self.tweepy.lookup_users(screen_names = identifiers, tweet_mode=tweet_mode)
+                results.extend(self.tweepy.lookup_users(screen_names = split, tweet_mode=tweet_mode))
             else:
-                results = self.tweepy.lookup_users(user_ids = identifiers, tweet_mode=tweet_mode)
+                results.extend(self.tweepy.lookup_users(user_ids = split, tweet_mode=tweet_mode))
 
         logging.info(f"Returned {len(results)} users out of {len(identifiers)} requested users")
         return results

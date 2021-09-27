@@ -1,6 +1,7 @@
 import click
 import logging
 import json
+import yaml
 
 from twesearch.lib import neo4j_importer
 from twesearch.lib.util import format_tweets_for_neo4j, add_campaign
@@ -12,13 +13,19 @@ logging.disable(logging.DEBUG)
 @click.command()
 @click.option('-u', '--username')
 @click.option('-i', '--in-file')
-@click.option('-n', '--neo4j', 'neo4j_flag', is_flag=True, default=True)
-@click.option('-c', '--couchbase', 'cb_flag', is_flag=True, default=True)
+@click.option('-nn', '--no-neo4j', 'neo4j_flag', is_flag=True, default=False)
+@click.option('-nc', '--no-couchbase', 'cb_flag', is_flag=True, default=False)
 def main(username, neo4j_flag,cb_flag, in_file):
-    neo4j = neo4j_importer.Neo4jImporter(neo4j_uri='bolt://10.124.0.3:7687', db_name='twitter', 
-                                                    auth={'user': 'neo4j', 'password': '***REMOVED***'},log=True)
-    couchbase = couchbase_importer.CouchbaseImporter(cb_uri='couchbase://10.124.0.3', auth={'user': 'admin', 
-                                                                                                'password': '***REMOVED***'})
+
+    with open (r'config.yaml') as f:
+        GLOBAL_CONFIG = yaml.load(f, Loader=yaml.FullLoader)
+    
+    if not neo4j_flag:
+        neo4j = neo4j_importer.Neo4jImporter(neo4j_uri=GLOBAL_CONFIG['neo4j_uri'], db_name=GLOBAL_CONFIG['neo4j_dbname'], 
+                                                    auth={'user': GLOBAL_CONFIG['neo4j_user'], 'password': GLOBAL_CONFIG['neo4j_pw']},log=True)
+    if not cb_flag: 
+        couchbase = couchbase_importer.CouchbaseImporter(cb_uri=GLOBAL_CONFIG['cb_uri'], auth={'user': GLOBAL_CONFIG['cb_user'], 
+                                                                                                'password': GLOBAL_CONFIG['cb_pw']})
     tv2 = Twesearch(log=True, log_level='info')
     def get_timeline(user_id):
         print(f'Fetching timeline tweets for {username}. Buckle up partner')
@@ -43,22 +50,26 @@ def main(username, neo4j_flag,cb_flag, in_file):
                 quota_file.write(json.dumps(quota))
             print('Inserting tweets')
 
-            couchbase.upsert_documents('tweets', tweets)
+            if not cb_flag:
+                couchbase.upsert_documents('tweets', tweets)
 
-            neo4j_tweets = format_tweets_for_neo4j(tweets, users)
-            neo4j.insert('tweets', neo4j_tweets)
+            if not neo4j_flag:
+                neo4j_tweets = format_tweets_for_neo4j(tweets, users)
+                neo4j.insert('tweets', neo4j_tweets)
         
         if users:
             print(f'Fetched {len(users)}, Inserting users.')
-            couchbase.upsert_documents('users', users)
-            neo4j.insert('users', users)
+            if not cb_flag:
+                couchbase.upsert_documents('users', users)
+            if not neo4j_flag:
+                neo4j.insert('users', users)
     
     if in_file:
         with open(in_file) as i_f:
             usernames = i_f.read().splitlines()
         user_ids = [tv2.username_to_id(username) for username in usernames]
     else: 
-        user_ids = tv2.username_to_id(username)
+        user_ids = [tv2.username_to_id(username)]
     
     for user_id in user_ids:
         get_timeline(user_id)

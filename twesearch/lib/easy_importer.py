@@ -1,18 +1,26 @@
 from twesearch.lib import neo4j_importer
 from twesearch.lib.util import format_tweets_for_neo4j, add_campaign
 from twesearch.lib import couchbase_importer
+import logging
+import yaml
+
+logging.disable(logging.DEBUG)
+
+
+with open (r'config.yaml') as f:
+    GLOBAL_CONFIG = yaml.load(f, Loader=yaml.FullLoader)
 
 neo4j_importer = neo4j_importer.Neo4jImporter(
-                                    neo4j_uri='bolt://10.124.0.3:7687',
-                                    db_name='twitter', 
-                                    auth={'user': 'neo4j', 
-                                            'password': '***REMOVED***'},
+                                    neo4j_uri=GLOBAL_CONFIG['neo4j_uri'],
+                                    db_name=GLOBAL_CONFIG['neo4j_dbname'], 
+                                    auth={'user': GLOBAL_CONFIG['neo4j_user'], 
+                                            'password': GLOBAL_CONFIG['neo4j_pw']},
                                     log=True)
 
 couchbase_importer = couchbase_importer.CouchbaseImporter(
-                                    cb_uri='couchbase://10.124.0.3', 
-                                    auth={'user': 'admin', 
-                                            'password': '***REMOVED***'})
+                                    cb_uri=GLOBAL_CONFIG['cb_uri'], 
+                                    auth={'user': GLOBAL_CONFIG['cb_user'],
+                                            'password': GLOBAL_CONFIG['cb_pw']})
 
 def easy_import(items):
     tweets = items['tweets']
